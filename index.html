@@ -1759,12 +1759,24 @@ function renderTypeInfo(type) {
 }
 
 function speakTypeInfo(type, b) {
-  const parts = [`${type} 타입.`];
-  if (b.atkSuper.length) parts.push(`공격할 때, ${b.atkSuper.join(', ')} 타입에게 효과가 굉장합니다.`);
-  if (b.atkNotVery.length) parts.push(`${b.atkNotVery.join(', ')} 타입에게는 효과가 별로입니다.`);
-  if (b.atkNo.length) parts.push(`${b.atkNo.join(', ')} 타입에게는 효과가 없습니다.`);
-  if (b.defWeak.length) parts.push(`방어할 때, ${b.defWeak.join(', ')} 타입에 약합니다.`);
-  speak(parts.join(' '));
+  const segments = [`${type} 타입.`];
+  if (b.atkSuper.length) {
+    segments.push(`공격할 때, ${b.atkSuper[0]} 타입에게 효과가 굉장합니다.`);
+    b.atkSuper.slice(1).forEach(t => segments.push(`${t} 타입에게 효과가 굉장합니다.`));
+  }
+  if (b.atkNotVery.length) {
+    segments.push(`${b.atkNotVery[0]} 타입에게는 효과가 별로입니다.`);
+    b.atkNotVery.slice(1).forEach(t => segments.push(`${t} 타입에게는 효과가 별로입니다.`));
+  }
+  if (b.atkNo.length) {
+    segments.push(`${b.atkNo[0]} 타입에게는 효과가 없습니다.`);
+    b.atkNo.slice(1).forEach(t => segments.push(`${t} 타입에게는 효과가 없습니다.`));
+  }
+  if (b.defWeak.length) {
+    segments.push(`방어할 때, ${b.defWeak[0]} 타입에 약합니다.`);
+    b.defWeak.slice(1).forEach(t => segments.push(`${t} 타입에 약합니다.`));
+  }
+  speak(segments);
 }
 
 /* ===========================================================
@@ -1807,17 +1819,47 @@ if ('speechSynthesis' in window) {
   speechSynthesis.onvoiceschanged = () => { koVoice = pickKoreanVoice(); };
   koVoice = pickKoreanVoice();
 }
-function speak(text) {
+// 발음 명확화: Yuna TTS가 헷갈리게 발음하는 단어들 보정
+function clarifyForTTS(text) {
+  return text;
+}
+// speak: 문자열 또는 문자열 배열을 받음
+// - 문자열: 한 번에 재생
+// - 배열: 각 요소를 별도 발화로 순차 재생 (타입 분리 발음 등)
+// - "풀"이 포함된 세그먼트 뒤에는 0.5초 인터벌 자동 추가
+function speak(input) {
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
+  let segments = Array.isArray(input) ? input.filter(s => s && s.trim()) : [input];
+  // "풀"이 포함된 세그먼트 뒤에 빈 발화(쉼) 추가 → 0.5초 인터벌 효과
+  const expanded = [];
+  segments.forEach(seg => {
+    expanded.push(seg);
+    if (/풀/.test(seg)) {
+      // 약 0.5초 정도 길이의 무음 (공백 + 마침표를 천천히 발음)
+      expanded.push({ silence: 500 });
+    }
+  });
   setTimeout(() => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ko-KR';
-    if (koVoice) u.voice = koVoice;
-    u.rate = 0.95;
-    u.pitch = 1.0;
-    u.volume = 1.0;
-    speechSynthesis.speak(u);
+    expanded.forEach(item => {
+      if (typeof item === 'object' && item.silence) {
+        // 무음 utterance: 빈 공백을 아주 느리게 + 볼륨 0 → 약 1초 지연
+        const silent = new SpeechSynthesisUtterance('   ');
+        silent.lang = 'ko-KR';
+        if (koVoice) silent.voice = koVoice;
+        silent.rate = 0.1;
+        silent.volume = 0;
+        speechSynthesis.speak(silent);
+      } else {
+        const u = new SpeechSynthesisUtterance(clarifyForTTS(item));
+        u.lang = 'ko-KR';
+        if (koVoice) u.voice = koVoice;
+        u.rate = 0.95;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+        speechSynthesis.speak(u);
+      }
+    });
   }, 50);
 }
 
@@ -1878,12 +1920,36 @@ if ('speechSynthesis' in window) {
   };
 }
 function speakResult(p, buckets) {
-  const types = p.types.length === 1 ? `${p.types[0]} 타입` : `${p.types[0]}, ${p.types[1]} 타입`;
-  const parts = [`${p.name}, ${types}.`];
-  if (buckets.x4.length) parts.push(`4배 약점은 ${buckets.x4.join(', ')}.`);
-  if (buckets.x2.length) parts.push(`2배 약점은 ${buckets.x2.join(', ')}.`);
-  if (buckets.x0.length) parts.push(`${buckets.x0.join(', ')} 타입은 효과가 없습니다.`);
-  speak(parts.join(' '));
+  // 각 "타입"은 별도 발화로 분리 재생 → 자음이 명확하게 발음됨
+  // 안내 문장(약점/효과없음 등)은 자연스럽게 한 줄로
+  const segments = [];
+  // 이름 + 타입
+  if (p.types.length === 1) {
+    segments.push(`${p.name}, ${p.types[0]} 타입.`);
+  } else {
+    segments.push(`${p.name}.`);
+    segments.push(`${p.types[0]}.`);
+    segments.push(`${p.types[1]} 타입.`);
+  }
+  // 타입 변환 특성을 가진 포켓몬 안내 (변환자재 / 리베로)
+  const TYPE_CHANGERS = ['개굴닌자', '에이스번'];
+  if (TYPE_CHANGERS.includes(p.name)) {
+    segments.push('타입을 바꿀 수 있습니다.');
+  }
+  // 약점/효과없음 - 안내 문장과 첫 타입은 같이, 나머지 타입은 분리
+  if (buckets.x4.length) {
+    segments.push(`4배 약점, ${buckets.x4[0]}.`);
+    buckets.x4.slice(1).forEach(t => segments.push(`${t}.`));
+  }
+  if (buckets.x2.length) {
+    segments.push(`2배 약점, ${buckets.x2[0]}.`);
+    buckets.x2.slice(1).forEach(t => segments.push(`${t}.`));
+  }
+  if (buckets.x0.length) {
+    segments.push(`${buckets.x0[0]} 타입은 효과가 없습니다.`);
+    buckets.x0.slice(1).forEach(t => segments.push(`${t} 타입은 효과가 없습니다.`));
+  }
+  speak(segments);
 }
 
 /* ===========================================================
