@@ -337,7 +337,9 @@
       <span></span><span></span><span></span><span></span><span></span><span></span>
       <span></span><span></span><span></span><span></span><span></span><span></span>
     </div>
+    <button id="debugBtn" style="margin-left:auto;padding:4px 8px;font-size:10px;background:#1a3320;color:#0f0;border:1px solid #0f0;border-radius:4px;cursor:pointer;">🔍 음성정보</button>
   </div>
+  <div id="debugPanel" style="display:none;margin:8px;padding:10px;background:#0a1f0a;color:#0f0;font-family:monospace;font-size:11px;border:1px solid #0f0;border-radius:4px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1775,12 +1777,21 @@ function pickKoreanVoice() {
   const koVoices = voices.filter(v => /ko[-_]?KR/i.test(v.lang) || /^ko/i.test(v.lang));
   if (koVoices.length === 0) return null;
   // 우선순위 (자연스러운 순):
-  // 1) iOS Premium/Enhanced 음성 (수진, 민수 등)
-  // 2) Google 한국어 (안드로이드/크롬)
-  // 3) Microsoft 한국어 (Edge)
-  // 4) 그 외 한국어
+  // 1) Yuna Premium ⭐ 최우선
+  // 2) 다른 Premium 음성
+  // 3) Yuna Enhanced
+  // 4) 다른 Enhanced/향상된 음성
+  // 5) Siri 음성
+  // 6) Google 한국어
+  // 7) Microsoft 한국어
+  // 8) 그 외 한국어
   const priorities = [
-    v => /Premium|Enhanced|향상된/i.test(v.name),
+    v => /Yuna/i.test(v.name) && /Premium/i.test(v.name),
+    v => /Premium/i.test(v.name),
+    v => /Yuna/i.test(v.name) && /Enhanced|향상된/i.test(v.name),
+    v => /Enhanced|향상된/i.test(v.name),
+    v => /Siri/i.test(v.name),
+    v => /Yuna|유나/i.test(v.name),
     v => /Google/i.test(v.name),
     v => /Microsoft|Heami|SunHi|InJoon/i.test(v.name),
     v => /Sujin|수진|Minsu|민수/i.test(v.name),
@@ -1808,6 +1819,63 @@ function speak(text) {
     u.volume = 1.0;
     speechSynthesis.speak(u);
   }, 50);
+}
+
+/* ===========================================================
+   디버깅 모드: 음성 정보 표시
+=========================================================== */
+const debugBtn = document.getElementById('debugBtn');
+const debugPanel = document.getElementById('debugPanel');
+function buildVoiceDebugInfo() {
+  if (!('speechSynthesis' in window)) return '❌ 이 브라우저는 음성 합성을 지원하지 않습니다.';
+  const voices = speechSynthesis.getVoices();
+  const koVoices = voices.filter(v => /ko[-_]?KR/i.test(v.lang) || /^ko/i.test(v.lang));
+  const lines = [];
+  lines.push('=== 현재 사용 중인 음성 ===');
+  if (koVoice) {
+    lines.push(`✅ 이름: ${koVoice.name}`);
+    lines.push(`   언어: ${koVoice.lang}`);
+    lines.push(`   로컬: ${koVoice.localService ? 'YES' : 'NO'}`);
+    lines.push(`   기본: ${koVoice.default ? 'YES' : 'NO'}`);
+  } else {
+    lines.push('❌ 한국어 음성 없음 (시스템 기본 음성 사용)');
+  }
+  lines.push('');
+  lines.push(`=== 사용 가능한 한국어 음성 (${koVoices.length}개) ===`);
+  if (koVoices.length === 0) {
+    lines.push('한국어 음성이 설치되어 있지 않습니다.');
+  } else {
+    koVoices.forEach((v, i) => {
+      const mark = v === koVoice ? '👉 ' : '   ';
+      lines.push(`${mark}${i+1}. ${v.name} (${v.lang})${v.localService ? ' [로컬]' : ' [원격]'}`);
+    });
+  }
+  lines.push('');
+  lines.push(`=== 전체 음성 수: ${voices.length}개 ===`);
+  lines.push('');
+  lines.push('=== 환경 정보 ===');
+  lines.push(`UA: ${navigator.userAgent}`);
+  return lines.join('\n');
+}
+if (debugBtn) {
+  debugBtn.addEventListener('click', () => {
+    if (debugPanel.style.display === 'none') {
+      debugPanel.textContent = buildVoiceDebugInfo();
+      debugPanel.style.display = 'block';
+    } else {
+      debugPanel.style.display = 'none';
+    }
+  });
+}
+// 음성 목록은 비동기로 로드되므로 패널이 열려있으면 갱신
+if ('speechSynthesis' in window) {
+  const originalOnVoicesChanged = speechSynthesis.onvoiceschanged;
+  speechSynthesis.onvoiceschanged = () => {
+    koVoice = pickKoreanVoice();
+    if (debugPanel && debugPanel.style.display !== 'none') {
+      debugPanel.textContent = buildVoiceDebugInfo();
+    }
+  };
 }
 function speakResult(p, buckets) {
   const types = p.types.length === 1 ? `${p.types[0]} 타입` : `${p.types[0]}, ${p.types[1]} 타입`;
