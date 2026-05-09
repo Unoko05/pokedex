@@ -975,11 +975,11 @@ const POKEMON = [
   [477,"야느와르몽",["고스트"],4,null],
   [478,"눈여아",["얼음","고스트"],4,null],
   [479,"로토무",["전기","고스트"],4,null],
-  [479,"로토무(스핀)",["전기","비행"],4,"form"],
-  [479,"로토무(워시)",["전기","물"],4,"form"],
-  [479,"로토무(컷)",["전기","풀"],4,"form"],
-  [479,"로토무(프로스트)",["전기","얼음"],4,"form"],
-  [479,"로토무(히트)",["전기","불꽃"],4,"form"],
+  [479,"스핀로토무",["전기","비행"],4,"form"],
+  [479,"워시로토무",["전기","물"],4,"form"],
+  [479,"커트로토무",["전기","풀"],4,"form"],
+  [479,"프로스트로토무",["전기","얼음"],4,"form"],
+  [479,"히트로토무",["전기","불꽃"],4,"form"],
   [480,"유크시",["에스퍼"],4,null],
   [481,"엠라이트",["에스퍼"],4,null],
   [482,"아그놈",["에스퍼"],4,null],
@@ -1772,8 +1772,25 @@ let koVoice = null;
 function pickKoreanVoice() {
   if (!('speechSynthesis' in window)) return null;
   const voices = speechSynthesis.getVoices();
-  return voices.find(v => /ko[-_]?KR/i.test(v.lang)) ||
-         voices.find(v => /^ko/i.test(v.lang)) || null;
+  const koVoices = voices.filter(v => /ko[-_]?KR/i.test(v.lang) || /^ko/i.test(v.lang));
+  if (koVoices.length === 0) return null;
+  // 우선순위 (자연스러운 순):
+  // 1) iOS Premium/Enhanced 음성 (수진, 민수 등)
+  // 2) Google 한국어 (안드로이드/크롬)
+  // 3) Microsoft 한국어 (Edge)
+  // 4) 그 외 한국어
+  const priorities = [
+    v => /Premium|Enhanced|향상된/i.test(v.name),
+    v => /Google/i.test(v.name),
+    v => /Microsoft|Heami|SunHi|InJoon/i.test(v.name),
+    v => /Sujin|수진|Minsu|민수/i.test(v.name),
+    v => true,
+  ];
+  for (const pred of priorities) {
+    const found = koVoices.find(pred);
+    if (found) return found;
+  }
+  return koVoices[0];
 }
 if ('speechSynthesis' in window) {
   speechSynthesis.onvoiceschanged = () => { koVoice = pickKoreanVoice(); };
@@ -1781,19 +1798,19 @@ if ('speechSynthesis' in window) {
 }
 function speak(text) {
   if (!('speechSynthesis' in window)) return;
-  // iOS Safari 호환: cancel 후 약간 지연시켜야 안정적
   speechSynthesis.cancel();
   setTimeout(() => {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';
     if (koVoice) u.voice = koVoice;
-    u.rate = 1.05;
+    u.rate = 0.95;
     u.pitch = 1.0;
+    u.volume = 1.0;
     speechSynthesis.speak(u);
   }, 50);
 }
 function speakResult(p, buckets) {
-  const types = p.types.length === 1 ? `${p.types[0]} 타입` : `${p.types[0]}, ${p.types[1]} 복합 타입`;
+  const types = p.types.length === 1 ? `${p.types[0]} 타입` : `${p.types[0]}, ${p.types[1]} 타입`;
   const parts = [`${p.name}, ${types}.`];
   if (buckets.x4.length) parts.push(`4배 약점은 ${buckets.x4.join(', ')}.`);
   if (buckets.x2.length) parts.push(`2배 약점은 ${buckets.x2.join(', ')}.`);
