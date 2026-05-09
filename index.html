@@ -1781,13 +1781,16 @@ if ('speechSynthesis' in window) {
 }
 function speak(text) {
   if (!('speechSynthesis' in window)) return;
+  // iOS Safari 호환: cancel 후 약간 지연시켜야 안정적
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ko-KR';
-  if (koVoice) u.voice = koVoice;
-  u.rate = 1.05;
-  u.pitch = 1.0;
-  speechSynthesis.speak(u);
+  setTimeout(() => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    if (koVoice) u.voice = koVoice;
+    u.rate = 1.05;
+    u.pitch = 1.0;
+    speechSynthesis.speak(u);
+  }, 50);
 }
 function speakResult(p, buckets) {
   const types = p.types.length === 1 ? `${p.types[0]} 타입` : `${p.types[0]}, ${p.types[1]} 복합 타입`;
@@ -1813,8 +1816,10 @@ if (SR) {
   recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 5;
+  let pendingQuery = null;
   recognition.onstart = () => {
     recognizing = true;
+    pendingQuery = null;
     micBtn.classList.add('recording');
     micBtn.innerHTML = '● REC';
     showToast('말씀해주세요...');
@@ -1823,6 +1828,12 @@ if (SR) {
     recognizing = false;
     micBtn.classList.remove('recording');
     micBtn.innerHTML = '🎤 음성';
+    // 마이크가 완전히 해제된 뒤 검색 실행 (iOS Safari TTS 충돌 방지)
+    if (pendingQuery) {
+      const q = pendingQuery;
+      pendingQuery = null;
+      setTimeout(() => handleSearch(q), 150);
+    }
   };
   recognition.onerror = (e) => {
     recognizing = false;
@@ -1855,10 +1866,19 @@ if (SR) {
     }
     const cleaned = chosen.replace(/[^\w가-힣\d]/g,'').trim();
     searchInput.value = cleaned;
-    handleSearch(cleaned);
+    // onend에서 실행하도록 보류 (TTS 안정성 향상)
+    pendingQuery = cleaned;
   };
   micBtn.addEventListener('click', () => {
     if (recognizing) { recognition.stop(); return; }
+    // iOS Safari: 사용자 제스처 안에서 TTS 엔진을 깨워둠 (이후 자동 호출 가능하게)
+    if ('speechSynthesis' in window) {
+      try {
+        const warmup = new SpeechSynthesisUtterance('');
+        warmup.volume = 0;
+        speechSynthesis.speak(warmup);
+      } catch (e) {}
+    }
     try { recognition.start(); }
     catch (e) { showToast('마이크를 사용할 수 없습니다.'); }
   });
