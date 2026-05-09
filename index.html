@@ -1913,7 +1913,7 @@ function handleSearch(q) {
 
 function showSuggestions(list) {
   if (list.length === 0) { hideSuggestions(); return; }
-  suggestions.innerHTML = list.map(p => {
+  suggestions.innerHTML = list.map((p, idx) => {
     if (p.isType) {
       return `
         <div class="sugg-item" data-type="${p.type}">
@@ -1923,7 +1923,7 @@ function showSuggestions(list) {
       `;
     }
     return `
-      <div class="sugg-item" data-no="${p.no}" data-form="${p.form ?? ''}">
+      <div class="sugg-item" data-name="${p.name}">
         <span class="sugg-name">${p.name}</span>
         <span class="sugg-meta">No.${String(p.no).padStart(4,'0')} · GEN${p.gen}</span>
       </div>
@@ -1940,10 +1940,9 @@ function showSuggestions(list) {
         renderTypeInfo(el.dataset.type);
         return;
       }
-      // 포켓몬 항목
-      const no = parseInt(el.dataset.no, 10);
-      const form = el.dataset.form || null;
-      const p = POKE_INDEX.find(x => x.no === no && (x.form ?? '') === (form ?? ''));
+      // 포켓몬 항목 - 이름으로 직접 매칭 (폼별 정확한 식별을 위해)
+      const name = el.dataset.name;
+      const p = POKE_INDEX.find(x => x.name === name);
       if (p) {
         searchInput.value = p.name;
         hideSuggestions();
