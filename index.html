@@ -3,6 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src https://fonts.gstatic.com;
+  img-src 'self' data: https://cdn.jsdelivr.net https://raw.githubusercontent.com https://fastly.jsdelivr.net https://gcore.jsdelivr.net;
+  connect-src https://pokeapi.co;
+  base-uri 'none';
+  form-action 'none';
+  frame-ancestors 'none';
+">
 <title>포켓몬 타입 도감</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -281,6 +292,56 @@
     text-align: center;
   }
   .toast.show { opacity: 1; }
+
+  /* 포켓몬 이미지 박스 - 도감 화면 안에 들어가는 스프라이트 */
+  .poke-img-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 4px 0 10px;
+    padding: 8px;
+    background:
+      repeating-linear-gradient(45deg, rgba(15,56,15,0.10) 0 2px, transparent 2px 6px),
+      rgba(15,56,15,0.06);
+    border: 2px dashed var(--screen-darkest);
+    border-radius: 4px;
+    min-height: 140px;
+    position: relative;
+  }
+  .poke-img-wrap img {
+    width: 130px;
+    height: 130px;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+    filter: drop-shadow(2px 3px 0 rgba(15,56,15,0.4));
+    transition: opacity 0.2s;
+  }
+  .poke-img-wrap img.loading { opacity: 0.3; }
+  .poke-img-wrap .img-fallback {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--screen-darkest);
+    opacity: 0.6;
+    letter-spacing: 1px;
+  }
+  /* 검색 제안 항목의 작은 썸네일 */
+  .sugg-item { gap: 10px; }
+  .sugg-thumb {
+    width: 36px; height: 36px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.04);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .sugg-thumb img {
+    width: 36px; height: 36px;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  .sugg-text { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 
   .t-노말{background:#a8a878;}.t-불꽃{background:#f08030;}.t-물{background:#6890f0;}
   .t-풀{background:#78c850;}.t-전기{background:#f8d030;color:#3a2a00;text-shadow:none;}
@@ -1654,6 +1715,173 @@ function findSuggestions(query, limit = 10) {
 =========================================================== */
 const display = document.getElementById('display');
 
+/* ===========================================================
+   포켓몬 아트워크 (다중 CDN 폴백)
+=========================================================== */
+// HTML 이스케이프 (XSS 방어)
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+// 여러 미러를 순차 시도. 일부 환경(인앱 브라우저)에서 특정 CDN이 차단될 수 있음
+const ARTWORK_MIRRORS = [
+  'https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/',
+  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/',
+  'https://fastly.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/',
+  'https://gcore.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/',
+];
+const ARTWORK_BASE = ARTWORK_MIRRORS[0];
+const SPECIES_API = 'https://pokeapi.co/api/v2/pokemon-species/';
+
+// 이미지 폴백 체인을 시도하는 함수
+function attachImageFallback(img, no) {
+  let mirrorIdx = 0;
+  img.addEventListener('error', function handler() {
+    mirrorIdx++;
+    if (mirrorIdx < ARTWORK_MIRRORS.length) {
+      img.src = ARTWORK_MIRRORS[mirrorIdx] + no + '.png';
+    } else {
+      img.removeEventListener('error', handler);
+      img.style.display = 'none';
+      if (img.parentNode) {
+        img.parentNode.insertAdjacentHTML('beforeend',
+          '<span class="img-fallback">NO IMAGE</span>');
+      }
+    }
+  });
+}
+
+// 한국어 폼 키워드 → PokeAPI 영어 슬러그 접미사 매핑
+// (메가는 이름 앞쪽에, 나머지 폼은 괄호 안에 표시됨)
+const FORM_SLUG_MAP = [
+  // 메가 진화 (X/Y 분기 우선 검사)
+  { ko: '메가', endsX: 'X', slug: '-mega-x' },
+  { ko: '메가', endsY: 'Y', slug: '-mega-y' },
+  { ko: '메가', slug: '-mega' },
+  // 리전 폼
+  { paren: '알로라', slug: '-alola' },
+  { paren: '가라르달마모드', slug: '-galar-zen' },
+  { paren: '가라르', slug: '-galar' },
+  { paren: '히스이', slug: '-hisui' },
+  { paren: '파르데아블레이즈종', slug: '-paldea-blaze' },
+  { paren: '파르데아워터종', slug: '-paldea-aqua' },
+  { paren: '파르데아콤뱃종', slug: '-paldea-combat' },
+  { paren: '파르데아', slug: '-paldea' },
+  // 거다이맥스 / 이터널맥스
+  { paren: '이터널맥스', slug: '-eternamax' },
+  // 폼 모드
+  { paren: '달마모드', slug: '-zen' },
+  { paren: '오리진폼', slug: '-origin' },
+  { paren: '스카이폼', slug: '-sky' },
+  { paren: '어택폼', slug: '-attack' },
+  { paren: '디펜스폼', slug: '-defense' },
+  { paren: '스피드폼', slug: '-speed' },
+  { paren: '블레이드폼', slug: '-blade' },
+  { paren: '영물폼', slug: '-therian' },
+  { paren: '굴레풀린모습', slug: '-unbound' },
+  { paren: '한밤의모습', slug: '-midnight' },
+  { paren: '황혼의모습', slug: '-dusk' },
+  { paren: '황혼의갈기', slug: '-dusk-mane' },
+  { paren: '새벽의날개', slug: '-dawn-wings' },
+  { paren: '울트라', slug: '-ultra' },
+  { paren: '백마', slug: '-ice' },
+  { paren: '흑마', slug: '-shadow' },
+  { paren: '검왕의모습', slug: '-crowned-sword' },
+  { paren: '방왕의모습', slug: '-crowned-shield' },
+  { paren: '연격의태세', slug: '-rapid-strike' },
+  { paren: '영웅폼', slug: '-hero' },
+  { paren: '주춧돌가면', slug: '-cornerstone-mask' },
+  { paren: '우물가면', slug: '-wellspring-mask' },
+  { paren: '화덕가면', slug: '-hearthflame-mask' },
+  // 캐스퐁 (눈/비/태양)
+  { paren: '눈', slug: '-snowy' },
+  { paren: '비', slug: '-rainy' },
+  { paren: '태양', slug: '-sunny' },
+  // 토게데마루/모르페코 등
+  { paren: '허기모드', slug: '-hangry' },
+  // 가라르 모르펜
+  { paren: '헌옷쓰레기', slug: '-antique' },
+  { paren: '모래쓰레기', slug: '-sandy' },
+  // 아르고나이트(군집/스텝/훌라/파칙파칙/하늘하늘)
+  { paren: '군집의모습', slug: '-school' },
+  { paren: '스텝폼', slug: '-pom-pom' },
+  { paren: '훌라훌라스타일', slug: '-pa-u' },
+  { paren: '파칙파칙스타일', slug: '-sensu' },
+  { paren: '하늘하늘스타일', slug: '-baile' },
+  // 진주의서기관 / 퍼펙트폼 (지가르데)
+  { paren: '퍼펙트폼', slug: '-complete' },
+];
+
+function findFormSlug(name) {
+  // X/Y로 끝나는 메가 우선
+  if (name.startsWith('메가')) {
+    if (name.endsWith('X')) return '-mega-x';
+    if (name.endsWith('Y')) return '-mega-y';
+    return '-mega';
+  }
+  // 괄호 안 키워드
+  const match = name.match(/\(([^)]+)\)/);
+  if (match) {
+    const inner = match[1];
+    for (const rule of FORM_SLUG_MAP) {
+      if (rule.paren && rule.paren === inner) return rule.slug;
+    }
+  }
+  return null;
+}
+
+// 같은 species API 결과 캐시 (도감번호별)
+const speciesCache = new Map();
+
+async function fetchSpeciesVarieties(no) {
+  if (speciesCache.has(no)) return speciesCache.get(no);
+  try {
+    const res = await fetch(SPECIES_API + no + '/');
+    if (!res.ok) throw new Error('species fetch failed');
+    const data = await res.json();
+    const varieties = data.varieties || [];
+    speciesCache.set(no, varieties);
+    return varieties;
+  } catch (e) {
+    speciesCache.set(no, []);
+    return [];
+  }
+}
+
+async function loadFormArtwork(p, imgId) {
+  const slug = findFormSlug(p.name);
+  if (!slug) return; // 매핑 없으면 본체 이미지 유지
+
+  const varieties = await fetchSpeciesVarieties(p.no);
+  if (!varieties.length) return;
+
+  // 변형 목록에서 슬러그가 일치하는 항목 찾기
+  // varieties[i].pokemon.name 예: "charizard-mega-x", url에서 ID 추출
+  const target = varieties.find(v => v.pokemon && v.pokemon.name && v.pokemon.name.endsWith(slug));
+  if (!target) return;
+
+  // URL 끝에서 ID 추출: .../pokemon/10034/
+  const idMatch = target.pokemon.url.match(/\/pokemon\/(\d+)\/?$/);
+  if (!idMatch) return;
+  const formId = idMatch[1];
+  const formImgUrl = ARTWORK_BASE + formId + '.png';
+
+  const img = document.getElementById(imgId);
+  if (!img) return; // 이미 다른 결과로 넘어갔으면 무시
+
+  // 새 이미지 사전 로드 후 교체 (실패 시 본체 유지)
+  const test = new Image();
+  test.onload = () => {
+    if (document.getElementById(imgId) === img) img.src = formImgUrl;
+  };
+  test.onerror = () => { /* 본체 이미지 유지 */ };
+  test.src = formImgUrl;
+}
+
 function renderResult(p) {
   const m = computeMatchups(p.types);
   const buckets = {x4:[], x2:[], xHalf:[], xQuarter:[], x0:[]};
@@ -1665,20 +1893,27 @@ function renderResult(p) {
     else if (v === 0) buckets.x0.push(t);
   }
 
-  const typeChips = p.types.map(t => `<span class="type-chip t-${t}">${t}</span>`).join('');
+  const typeChips = p.types.map(t => `<span class="type-chip t-${esc(t)}">${esc(t)}</span>`).join('');
   const dexNo = String(p.no).padStart(4, '0');
 
   const renderChips = (arr, mult) => {
     if (arr.length === 0) return '<span class="empty-line">없음</span>';
-    return arr.map(t => `<span class="chip t-${t}">${t}<span class="mult">${mult}</span></span>`).join('');
+    return arr.map(t => `<span class="chip t-${esc(t)}">${esc(t)}<span class="mult">${esc(mult)}</span></span>`).join('');
   };
+
+  // 이미지: 즉시 본체로 표시한 뒤 폼이면 정확한 폼 이미지로 비동기 교체
+  const baseImgUrl = ARTWORK_BASE + p.no + '.png';
+  const imgId = 'poke-img-' + Date.now();
 
   display.innerHTML = `
     <div class="result">
       <div class="result-head">
-        <span class="dex-no">No.${dexNo}</span>
-        <span class="name-ko">${p.name}</span>
-        <span class="gen-tag">GEN ${p.gen}</span>
+        <span class="dex-no">No.${esc(dexNo)}</span>
+        <span class="name-ko">${esc(p.name)}</span>
+        <span class="gen-tag">GEN ${esc(p.gen)}</span>
+      </div>
+      <div class="poke-img-wrap">
+        <img id="${esc(imgId)}" src="${esc(baseImgUrl)}" alt="${esc(p.name)}">
       </div>
       <div class="types-row">${typeChips}</div>
       ${buckets.x4.length ? `<div class="section"><div class="section-title">▼ 4배 약점</div><div class="chip-list">${renderChips(buckets.x4,'x4')}</div></div>` : ''}
@@ -1689,6 +1924,15 @@ function renderResult(p) {
     </div>
   `;
 
+  // 폼 변형이면 정확한 이미지로 교체 시도
+  if (p.form) {
+    loadFormArtwork(p, imgId);
+  } else {
+    // 본체 이미지에 폴백 체인 부착
+    const img = document.getElementById(imgId);
+    if (img) attachImageFallback(img, p.no);
+  }
+
   speakResult(p, buckets);
 }
 
@@ -1696,7 +1940,7 @@ function renderNotFound(query) {
   display.innerHTML = `
     <div class="welcome">
       <h1>찾을 수 없음</h1>
-      <p style="margin-top:10px;">"${query}"</p>
+      <p style="margin-top:10px;">"${esc(query)}"</p>
       <p class="hint">정확한 한국어 이름이나<br>도감번호를 입력해주세요.</p>
     </div>
   `;
@@ -1733,17 +1977,17 @@ function renderTypeInfo(type) {
 
   const renderChips = (arr, mult) => {
     if (arr.length === 0) return '<span class="empty-line">없음</span>';
-    return arr.map(t => `<span class="chip t-${t}">${t}<span class="mult">${mult}</span></span>`).join('');
+    return arr.map(t => `<span class="chip t-${esc(t)}">${esc(t)}<span class="mult">${esc(mult)}</span></span>`).join('');
   };
 
   display.innerHTML = `
     <div class="result">
       <div class="result-head">
         <span class="dex-no">TYPE</span>
-        <span class="name-ko">${type} 타입</span>
+        <span class="name-ko">${esc(type)} 타입</span>
         <span class="gen-tag">상성표</span>
       </div>
-      <div class="types-row"><span class="type-chip t-${type}">${type}</span></div>
+      <div class="types-row"><span class="type-chip t-${esc(type)}">${esc(type)}</span></div>
 
       <div class="section"><div class="section-title">⚔ 공격: 효과 굉장함 (x2)</div><div class="chip-list">${renderChips(atkSuper,'x2')}</div></div>
       <div class="section"><div class="section-title">⚔ 공격: 효과 별로 (½)</div><div class="chip-list">${renderChips(atkNotVery,'½')}</div></div>
@@ -2067,20 +2311,30 @@ function showSuggestions(list) {
   suggestions.innerHTML = list.map((p, idx) => {
     if (p.isType) {
       return `
-        <div class="sugg-item" data-type="${p.type}">
-          <span class="sugg-name">${p.name}</span>
-          <span class="sugg-meta">상성표</span>
+        <div class="sugg-item" data-type="${esc(p.type)}">
+          <span class="sugg-thumb"></span>
+          <span class="sugg-text">
+            <span class="sugg-name">${esc(p.name)}</span>
+            <span class="sugg-meta">상성표</span>
+          </span>
         </div>
       `;
     }
     return `
-      <div class="sugg-item" data-name="${p.name}">
-        <span class="sugg-name">${p.name}</span>
-        <span class="sugg-meta">No.${String(p.no).padStart(4,'0')} · GEN${p.gen}</span>
+      <div class="sugg-item" data-name="${esc(p.name)}">
+        <span class="sugg-thumb"><img loading="lazy" src="${esc(ARTWORK_BASE + p.no + '.png')}" alt="" data-thumb="1"></span>
+        <span class="sugg-text">
+          <span class="sugg-name">${esc(p.name)}</span>
+          <span class="sugg-meta">No.${esc(String(p.no).padStart(4,'0'))} · GEN${esc(p.gen)}</span>
+        </span>
       </div>
     `;
   }).join('');
   suggestions.style.display = 'block';
+  // 썸네일 에러 핸들러 부착 (인라인 onerror 대신, CSP 호환)
+  suggestions.querySelectorAll('img[data-thumb="1"]').forEach(img => {
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+  });
   suggestions.querySelectorAll('.sugg-item').forEach(el => {
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
