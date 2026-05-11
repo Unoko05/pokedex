@@ -2037,8 +2037,12 @@ function speakTypeInfo(type, b) {
     b.atkNotVery.slice(1).forEach(t => segments.push(`${t} 타입에게는 효과가 별로입니다.`));
   }
   if (b.atkNo.length) {
-    segments.push(`${b.atkNo[0]} 타입에게는 효과가 없습니다.`);
-    b.atkNo.slice(1).forEach(t => segments.push(`${t} 타입에게는 효과가 없습니다.`));
+    if (b.atkNo.length === 1) {
+      segments.push(`${b.atkNo[0]} 타입에게는 효과가 없습니다.`);
+    } else {
+      const joined = b.atkNo.join(', ');
+      segments.push(`${joined} 타입에게는 효과가 없습니다.`);
+    }
   }
   if (b.defWeak.length) {
     segments.push(`방어할 때, ${b.defWeak[0]} 타입에 약합니다.`);
@@ -2214,8 +2218,12 @@ function speakResult(p, buckets) {
     buckets.x2.slice(1).forEach(t => segments.push(`${t}.`));
   }
   if (buckets.x0.length) {
-    segments.push(`${buckets.x0[0]} 타입은 효과가 없습니다.`);
-    buckets.x0.slice(1).forEach(t => segments.push(`${t} 타입은 효과가 없습니다.`));
+    if (buckets.x0.length === 1) {
+      segments.push(`${buckets.x0[0]} 타입은 효과가 없습니다.`);
+    } else {
+      const joined = buckets.x0.join(', ');
+      segments.push(`${joined} 타입은 효과가 없습니다.`);
+    }
   }
   speak(segments);
 }
