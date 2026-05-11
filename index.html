@@ -296,16 +296,18 @@
   /* 포켓몬 이미지 박스 - 도감 화면 안에 들어가는 스프라이트 */
   .poke-img-wrap {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    margin: 4px 0 10px;
-    padding: 8px;
+    gap: 6px;
+    margin: 4px 0 12px;
+    padding: 10px 8px 8px;
     background:
       repeating-linear-gradient(45deg, rgba(15,56,15,0.10) 0 2px, transparent 2px 6px),
       rgba(15,56,15,0.06);
-    border: 2px dashed var(--screen-darkest);
+    border: 2px solid var(--screen-darkest);
     border-radius: 4px;
-    min-height: 140px;
+    min-height: 170px;
     position: relative;
   }
   .poke-img-wrap img {
@@ -323,6 +325,20 @@
     color: var(--screen-darkest);
     opacity: 0.6;
     letter-spacing: 1px;
+  }
+  /* 이미지 박스 안에 들어가는 타입 행 */
+  .poke-img-wrap .types-row {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 0;
+    padding-top: 4px;
+    width: 100%;
+  }
+  .poke-img-wrap .types-row .type-chip {
+    font-size: 10.4px;
+    padding: 3px 9.6px;
   }
   /* 검색 제안 항목의 작은 썸네일 */
   .sugg-item { gap: 10px; }
@@ -1914,8 +1930,8 @@ function renderResult(p) {
       </div>
       <div class="poke-img-wrap">
         <img id="${esc(imgId)}" src="${esc(baseImgUrl)}" alt="${esc(p.name)}">
+        <div class="types-row">${typeChips}</div>
       </div>
-      <div class="types-row">${typeChips}</div>
       ${buckets.x4.length ? `<div class="section"><div class="section-title">▼ 4배 약점</div><div class="chip-list">${renderChips(buckets.x4,'x4')}</div></div>` : ''}
       <div class="section"><div class="section-title">▼ 2배 약점</div><div class="chip-list">${renderChips(buckets.x2,'x2')}</div></div>
       <div class="section"><div class="section-title">▲ 0.5배 내성</div><div class="chip-list">${renderChips(buckets.xHalf,'½')}</div></div>
