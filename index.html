@@ -2102,12 +2102,14 @@ function clarifyForTTS(text) {
 function speak(input) {
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
-  let segments = Array.isArray(input) ? input.filter(s => s && s.trim()) : [input];
+  let segments = Array.isArray(input)
+    ? input.filter(s => (typeof s === 'string') ? s.trim() : (s && typeof s === 'object'))
+    : [input];
   // "풀"이 포함된 세그먼트 뒤에 빈 발화(쉼) 추가 → 0.5초 인터벌 효과
   const expanded = [];
   segments.forEach(seg => {
     expanded.push(seg);
-    if (/풀/.test(seg)) {
+    if (typeof seg === 'string' && /풀/.test(seg)) {
       // 약 0.5초 정도 길이의 무음 (공백 + 마침표를 천천히 발음)
       expanded.push({ silence: 500 });
     }
@@ -2208,16 +2210,19 @@ function speakResult(p, buckets) {
   if (TYPE_CHANGERS.includes(p.name)) {
     segments.push('타입을 바꿀 수 있습니다.');
   }
-  // 약점/효과없음 - 안내 문장과 첫 타입은 같이, 나머지 타입은 분리
+  // 약점/효과없음 - "~약점은 ~~~입니다" 형식
   if (buckets.x4.length) {
-    segments.push(`4배 약점, ${buckets.x4[0]}.`);
-    buckets.x4.slice(1).forEach(t => segments.push(`${t}.`));
+    const joined = buckets.x4.join(', ');
+    segments.push(`4배 약점은 ${joined}입니다.`);
   }
   if (buckets.x2.length) {
-    segments.push(`2배 약점, ${buckets.x2[0]}.`);
-    buckets.x2.slice(1).forEach(t => segments.push(`${t}.`));
+    const joined = buckets.x2.join(', ');
+    segments.push(`2배 약점은 ${joined}입니다.`);
   }
   if (buckets.x0.length) {
+    // 약점 안내 끝나고 무효 타입 말하기 전 약 1초 pause
+    segments.push({ silence: 500 });
+    segments.push({ silence: 500 });
     if (buckets.x0.length === 1) {
       segments.push(`${buckets.x0[0]} 타입은 효과가 없습니다.`);
     } else {
